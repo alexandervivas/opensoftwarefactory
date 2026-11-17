@@ -133,7 +133,7 @@ test("what the orchestrator would refuse shows as problems: no source, no size, 
 test("the styles of the nodes sit in their own marked block", () => {
   const at = style.indexOf("/* workflow editor: merge and batch nodes */");
   assert.ok(at > 0);
-  for (const selector of [".tile .bar-merge", ".tile .bar-batch", ".tile .tray-line", ".node-sources", '[data-field="capacity"]', '[data-field="size"]', '[data-field="input_timeout"]']) {
+  for (const selector of [".tile .tray-line", ".node-sources", '[data-field="capacity"]', '[data-field="size"]', '[data-field="input_timeout"]']) {
     assert.ok(style.slice(at).includes(selector), selector);
   }
 });

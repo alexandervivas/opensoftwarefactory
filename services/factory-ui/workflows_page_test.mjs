@@ -554,7 +554,9 @@ test("a merge and a batch have their own tiles: a funnel and a tray, named by wh
   assert.notEqual(body("gather"), body("a"));
   // Both keep the ports of every tile, in and out.
   for (const id of ["collect", "gather"]) assert.equal(all(tile(id)).filter((n) => n.attrs.class === "port").length, 2, id);
-  assert.ok(find(tile("collect"), (n) => n.attrs.class === "bar-merge") && find(tile("gather"), (n) => n.attrs.class === "bar-batch"));
+  // The outline names the kind; no tile carries a coloured bar.
+  assert.ok(tile("collect").attrs.class.includes("kind-merge") && tile("gather").attrs.class.includes("kind-batch"));
+  for (const id of ["collect", "gather", "a"]) assert.equal(find(tile(id), (n) => /^bar-/.test(n.attrs.class || "")), undefined, id);
 });
 
 test("the node panel of a merge or batch has Node ID, its sources and its parameters, and no agent fields", async () => {
@@ -668,7 +670,7 @@ test("a dev pod, a command and a stop step have their own tiles, named by what t
   assert.equal(find(tile("pod"), (n) => n.tag === "title").textContent, "Pod: claims-build · agent/pay-{run}", "in full on hover");
   assert.deepEqual(lines("verify"), ["Verify", "./verify.sh"]);
   assert.deepEqual(lines("stop"), ["Stop", "Deletes the dev pod"]);
-  for (const [id, bar] of [["pod", "bar-devpod"], ["verify", "bar-command"], ["stop", "bar-devpod-stop"]]) assert.ok(find(tile(id), (n) => n.attrs.class === bar), bar);
+  for (const [id, kind] of [["pod", "kind-devpod"], ["verify", "kind-command"], ["stop", "kind-devpod-stop"]]) assert.ok(tile(id).attrs.class.includes(kind), kind);
   // They keep the ports of every tile; only a gate has the Rejected port.
   for (const id of ["pod", "verify", "stop"]) assert.equal(all(tile(id)).filter((n) => (n.attrs.class || "").startsWith("port")).length, 2, id);
   assert.equal(all(tile("review")).filter((n) => n.attrs.class === "port port-reject").length, 1);

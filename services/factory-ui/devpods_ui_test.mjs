@@ -70,7 +70,6 @@ test("a dev pod is a hexagon, a command a slanted box and a stop step a notched 
   assert.deepEqual(middle("devpod-stop"), [14, W - 14], "a stop step's points turn inwards");
   assert.match(workflows, /devpod: "Dev Pod", "devpod-stop": "Stop Dev Pod", command: "Command" \}/);
   assert.match(workflows, /devpod: DEVPOD_ICON, command: COMMAND_ICON, "devpod-stop": DEVPOD_STOP_ICON \}/);
-  assert.match(style, /\.tile \.bar-devpod, \.tile \.bar-command, \.tile \.bar-devpod-stop \{ fill: var\(--muted\); \}/);
 });
 
 test("the tiles say what the step works on: repository and work branch, the command, or that the pod is deleted", () => {

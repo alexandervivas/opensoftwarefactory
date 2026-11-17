@@ -385,7 +385,7 @@ test("the styles of the new nodes sit in one marked block at the end of the styl
   const at = style.indexOf("/* workflow editor: team and workflow nodes */");
   assert.ok(at > 0);
   const block = style.slice(at);
-  for (const selector of [".tile .band", ".tile .band-line", ".tile .bar-workflow", ".tile .bar-team", ".wf-path", ".team-member", ".team-channel.default", ".nested-steps"]) {
+  for (const selector of [".tile .band", ".tile .band-line", ".wf-path", ".team-member", ".team-channel.default", ".nested-steps"]) {
     assert.ok(block.includes(selector), selector);
   }
 });

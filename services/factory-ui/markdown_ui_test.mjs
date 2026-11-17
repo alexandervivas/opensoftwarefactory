@@ -162,3 +162,12 @@ test("Memory reference discovery links strict blob IDs but not paths inside exte
   assert.deepEqual(Array.from(blobReferences(text)), ["runs/r1/input", "policies/security/v2/policy.md"]);
   assert.equal(all(blobReferencePanel(text), "a").length, 2);
 });
+
+test("an underscore inside a word is part of a name, never emphasis", () => {
+  const { renderMarkdown } = setup();
+  const root = renderMarkdown("Call list_session_files, then __init__ and _this_ or __that__.");
+  const text = (n) => typeof n === "string" ? n : (n.children || []).map(text).join("");
+  assert.deepEqual(all(root, "em").map(text), ["this"]);
+  assert.deepEqual(all(root, "strong").map(text), ["init", "that"]);
+  assert.match(text(root), /list_session_files/);
+});

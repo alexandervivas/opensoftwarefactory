@@ -1320,10 +1320,7 @@ const WorkflowLogic = (() => {
   function drawInputTile(root, defs, p) {
     const g = el("g", { class: "tile input-tile", transform: `translate(${p.x},${p.y})`, tabindex: 0, role: "button", "aria-label": "Input" }, root);
     el("title", {}, g).textContent = "Opens Select Inputs to start runs";
-    const clip = el("clipPath", { id: "tile-clip-input" }, defs);
-    el("rect", { width: TILE_W, height: TILE_H, rx: 8 }, clip);
     el("rect", { class: "body", width: TILE_W, height: TILE_H, rx: 8 }, g);
-    el("rect", { class: "bar-input", width: TILE_W, height: 3, "clip-path": "url(#tile-clip-input)" }, g);
     const ic = el("g", { class: "type-icon", transform: "translate(12,24)", stroke: "currentColor", fill: "none", "stroke-width": 1.5, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
     ic.innerHTML = ICONS.run;
     el("text", { x: 34, y: 37, class: "name" }, g).textContent = "Input";
@@ -1337,12 +1334,12 @@ const WorkflowLogic = (() => {
   // The outline of a tile comes from WorkflowLogic.tileOutline. Icon and text move in by this
   // much where a band or a slanted edge takes the room.
   const TILE_PAD = { workflow: BAND_W, gate: 6, interactive: 8, merge: 12, devpod: 10, command: 8, "devpod-stop": 12 };
-  const TRAY_LINE_Y = 8; // a batch's second line, under the bar at its top edge
+  const TRAY_LINE_Y = 8; // a batch's second line, under its top edge
 
   function drawTile(root, defs, s, i) {
     const W = TILE_W, H = TILE_H;
     const g = el("g", {
-      class: `tile${state.selected === s.id ? " selected" : ""}${missingAgent(s) ? " missing" : ""}`,
+      class: `tile kind-${kind(s)}${state.selected === s.id ? " selected" : ""}${missingAgent(s) ? " missing" : ""}`,
       transform: `translate(${s.position.x},${s.position.y})`,
       tabindex: 0, role: "button", "data-step": s.id,
       "aria-label": `Step ${s.id}:${subtitle(s) ? " " + subtitle(s) : ""}`,
@@ -1363,7 +1360,6 @@ const WorkflowLogic = (() => {
     }
     // A batch is a tray: a second line runs under its top edge.
     if (s.service === "batch") el("line", { class: "tray-line", x1: 1, y1: TRAY_LINE_Y, x2: W - 1, y2: TRAY_LINE_Y }, g);
-    el("rect", { class: `bar-${kind(s)}`, width: W, height: 3, "clip-path": `url(#tile-clip-${i})` }, g);
     const ic = el("g", { class: "type-icon", transform: `translate(${12 + pad},13)`, stroke: "currentColor", fill: "none", "stroke-width": 1.5, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
     ic.innerHTML = KIND_ICON[s.service] || ICONS[TYPE_ICON[s.service] || "step"];
     const sub = subtitle(s);

@@ -211,7 +211,8 @@ function isJSONDocument(text) {
 // to safe browser schemes.
 function markdownInline(text) {
   const out = document.createDocumentFragment();
-  const token = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*]+\*|_[^_]+_)/g;
+  // An underscore inside a word (list_session_files) is part of a name, never emphasis.
+  const token = /(`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|(?<![\p{L}\p{N}_])__[^_]+__(?![\p{L}\p{N}_])|~~[^~]+~~|\*[^*]+\*|(?<![\p{L}\p{N}_])_[^_]+_(?![\p{L}\p{N}_]))/gu;
   let at = 0;
   for (const match of text.matchAll(token)) {
     if (match.index > at) out.append(text.slice(at, match.index));

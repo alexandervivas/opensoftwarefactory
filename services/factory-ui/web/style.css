@@ -342,13 +342,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .tile.missing .sub { fill: var(--danger-text); }
 .tile:focus, .tile:focus-visible { outline: none; }
 .tile:focus-visible .body { stroke: var(--accent); stroke-width: 2; }
-.tile .bar-input { fill: var(--line); } /* not a step type, and not a state colour */
 .input-edge { stroke-dasharray: 4 4; }
 .input-tile { cursor: pointer; }
-.tile .bar-agent { fill: var(--accent); } .tile .bar-gate, .tile .bar-interactive { fill: var(--waiting); } .tile .bar-route, .tile .bar-custom { fill: var(--muted); } /* a gate and an interactive step both wait for a person */
 .tile .name { fill: var(--text); font-size: 14px; font-weight: 600; }
 .tile .sub { fill: var(--muted); font-size: 12px; }
 .tile .type-icon { color: var(--muted); }
+/* The outline and icon name the kind of step; only a step that waits for a person colours its icon. */
+.tile.kind-gate .type-icon, .tile.kind-interactive .type-icon { color: var(--waiting); }
 .tile .name, .tile .sub { pointer-events: none; }
 .port { fill: var(--panel); stroke: var(--muted); stroke-width: 2; cursor: crosshair; }
 .port:hover { stroke: var(--accent); }
@@ -387,14 +387,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 .markdown-body > :first-child { margin-top: 0; }
 .markdown-body > :last-child { margin-bottom: 0; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin: 1.25em 0 .5em; line-height: 1.25; text-wrap: balance; }
-.markdown-body h1 { font-size: 1.5rem; }
-.markdown-body h2 { font-size: 1.25rem; }
-.markdown-body h3 { font-size: 1.125rem; }
-.markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 1rem; }
+/* Headings stay on the UI scale (18/16/14), so a prompt reads as content inside a panel, not as a page of its own. */
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { font-weight: 600; }
+.markdown-body h1 { font-size: 1.125rem; }
+.markdown-body h2 { font-size: 1rem; }
+.markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: .875rem; }
 .markdown-body p, .markdown-body ul, .markdown-body ol, .markdown-body blockquote, .markdown-body pre { margin: 0 0 1em; }
 .markdown-body ul, .markdown-body ol { padding-left: 1.5em; }
 .markdown-body li + li { margin-top: .25em; }
-.markdown-body blockquote { padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.markdown-body blockquote { padding-left: 12px; border-left: 1px solid var(--line); color: var(--muted); }
 .markdown-body code { padding: 1px 4px; border-radius: 4px; background: var(--panel); font-family: var(--mono); font-size: .875em; }
 .markdown-body pre { padding: 10px; overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); white-space: pre; }
 .markdown-body pre code { padding: 0; background: none; font-size: .8125rem; }
@@ -610,8 +611,9 @@ select.fit { width: auto; }
 .file-fields .model-field { max-width: 100%; }
 .file-fields .model-field .row { flex-wrap: wrap; }
 .file-fields .agent-tools { max-width: 100%; }
-.file-fields #agent-tools, .file-fields #agent-policies { position: relative; min-width: 160px; max-width: 100%; padding-right: 28px; text-align: left; }
-.file-fields #agent-tools::after, .file-fields #agent-policies::after { content: ""; position: absolute; top: 11px; right: 11px; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
+.file-fields #agent-tools, .file-fields #agent-policies { position: relative; min-width: 160px; max-width: 100%; padding-right: 26px; text-align: left; }
+/* The same small triangle as a select, so every dropdown reads alike. */
+.file-fields #agent-tools::after, .file-fields #agent-policies::after { content: ""; position: absolute; top: 13px; right: 7px; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 4px solid var(--muted); }
 .agent-tool-picker > .row { flex-wrap: nowrap; margin-bottom: 12px; }
 .agent-tool-picker > .row input { flex: 1; min-width: 0; }
 .agent-tool-picker-status { color: var(--muted); font-size: .8125rem; }
@@ -752,15 +754,14 @@ select.fit { width: auto; }
 mark.search-hit { padding: 0; border-radius: 2px; background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; }
 mark.search-hit.current { background: var(--accent); color: var(--accent-fg); }
 /* The further agents of an interactive step: a compact multi-select like Policies on Agents. */
-.step-form .multi-select-trigger { position: relative; min-width: 120px; max-width: 100%; padding-right: 28px; text-align: left; }
-.step-form .multi-select-trigger::after { content: ""; position: absolute; top: 11px; right: 11px; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
+.step-form .multi-select-trigger { position: relative; min-width: 120px; max-width: 100%; padding-right: 26px; text-align: left; }
+.step-form .multi-select-trigger::after { content: ""; position: absolute; top: 13px; right: 7px; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 4px solid var(--muted); }
 /* Links on the session status line keep to one line; only the plain text gives way. */
 .session-meta a { flex: none; white-space: nowrap; }
 /* workflow editor: team and workflow nodes */
 /* A workflow node has a tinted band down each side; a team node carries the accent of the agents it runs. */
 .tile .band { fill: color-mix(in srgb, var(--muted) 22%, var(--node-fill)); pointer-events: none; }
 .tile .band-line { stroke: var(--muted); stroke-width: 1.5; pointer-events: none; }
-.tile .bar-workflow { fill: var(--muted); } .tile .bar-team { fill: var(--accent); }
 /* The path line above the canvas: root › nested › current. */
 .wf-path { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: .8125rem; white-space: nowrap; overflow: hidden; }
 .wf-path[hidden] { display: none; }
@@ -785,7 +786,6 @@ mark.search-hit.current { background: var(--accent); color: var(--accent-fg); }
 /* A tile is centred on its point by margins, not a transform: the pressed state of every button sets a transform, which would move the tile away under the pointer and lose the click. */
 .team-member { position: absolute; z-index: 1; margin: -22px 0 0 calc(max(26%, 96px) / -2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: max(26%, 96px); min-width: 0; height: 44px; padding: 0 6px; border-radius: 8px; background: var(--node-fill); font-weight: 600; line-height: 1.2; }
 .team-member:hover { border-color: var(--muted); background: var(--node-fill); }
-.team-member.lead { border-top: 3px solid var(--accent); }
 .team-member.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .team-member.missing { border-color: var(--failed); }
 .team-member-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -834,7 +834,6 @@ mark.search-hit.current { background: var(--accent); color: var(--accent-fg); }
 .team-canvas .team-panel { max-width: 760px; margin: 0 auto; }
 .team-member { touch-action: none; }
 /* workflow editor: merge and batch nodes */
-.tile .bar-merge, .tile .bar-batch { fill: var(--muted); } /* they only route, like a router */
 .tile .tray-line { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
 /* Their sources are shown, not edited: arrows change them. */
 .node-sources { min-height: 32px; display: flex; align-items: center; font-size: .875rem; overflow-wrap: anywhere; }
@@ -869,7 +868,6 @@ mark.search-hit.current { background: var(--accent); color: var(--accent-fg); }
 .chip-blocked { background: rgb(124 58 237 / .12); } .chip-blocked .dot { background: transparent; box-shadow: inset 0 0 0 2px var(--waiting); }
 .blocked-line { margin: 0; overflow-wrap: anywhere; }
 /* Dev pod steps in the editor: they run no agent, so their bar is muted like a router's. */
-.tile .bar-devpod, .tile .bar-command, .tile .bar-devpod-stop { fill: var(--muted); }
 /* A gate's back edge: where a rejection goes. Dashed, in the failed colour, around the tiles. */
 .back-edge { stroke: var(--failed); stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
 .edge-hit:hover + .back-edge { stroke-width: 2.5; }
