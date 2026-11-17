@@ -122,7 +122,9 @@ type server struct {
 	// agents reads the settings of a pinned agent for the run metadata. It may be nil.
 	agents func(ctx context.Context, ref string) (AgentSettings, error)
 	logger *slog.Logger
-	mu     sync.Mutex
+	// scheduler keeps the Temporal schedules in step with the config. It may be nil.
+	scheduler *scheduler
+	mu        sync.Mutex
 }
 
 func (s *server) routes() http.Handler {

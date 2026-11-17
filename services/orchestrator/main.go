@@ -73,7 +73,8 @@ func run() error {
 	w.RegisterWorkflowWithOptions(pipeline.Team, workflow.RegisterOptions{Name: pipeline.TeamWorkflowName})
 	w.RegisterWorkflowWithOptions(ScheduledRun, workflow.RegisterOptions{Name: scheduleWorkflowName})
 	agents := newAgentRegistry(blobs.Client)
-	s := &server{configPath: *configPath, blobs: blobs, runner: temporalRunner{c}, agents: agents.settings, logger: logger}
+	sched := &scheduler{api: temporalSchedules{c}, logger: logger}
+	s := &server{configPath: *configPath, blobs: blobs, runner: temporalRunner{c}, agents: agents.settings, logger: logger, scheduler: sched}
 	w.RegisterActivity(&scheduleActivities{s: s})
 	w.RegisterActivity(&pipeline.Activities{Store: blobs, LoadDefinitions: func() ([]pipeline.Definition, error) {
 		cfg, err := loadConfig(*configPath)
@@ -87,6 +88,13 @@ func run() error {
 	httpServer := &http.Server{Addr: *addr, Handler: otelhttp.NewHandler(s.routes(), "orchestrator.http"), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The schedules are reconciled until shutdown, and the loop ends before the client closes.
+	reconciled := make(chan struct{})
+	go func() {
+		defer close(reconciled)
+		sched.run(ctx, func() (Config, error) { return loadConfig(*configPath) }, time.Minute)
+	}()
+	defer func() { stop(); <-reconciled }()
 	result := make(chan error, 1)
 	go func() {
 		logger.Info("orchestrator listening", "address", httpServer.Addr)
