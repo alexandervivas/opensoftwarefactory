@@ -169,6 +169,9 @@ func (s *server) renameWorkflow(w http.ResponseWriter, r *http.Request) {
 			}
 			return ref
 		}
+		for i := range c.Schedules {
+			c.Schedules[i].Workflow = rename(c.Schedules[i].Workflow)
+		}
 		for i := range c.Workflows {
 			def := &c.Workflows[i]
 			if def.Name == old {
@@ -236,6 +239,12 @@ func (s *server) deleteWorkflow(w http.ResponseWriter, r *http.Request) {
 			conflict := refuse(http.StatusConflict, "workflow %q is used by: %s", name, strings.Join(users, ", "))
 			conflict.workflows = users
 			return conflict
+		}
+		// A schedule would otherwise fire a workflow that no longer exists.
+		for _, sched := range c.Schedules {
+			if ref, _, ok := pipeline.ParseWorkflowRef(sched.Workflow); ok && ref == name {
+				return refuse(http.StatusConflict, "workflow %q is used by schedule: %s", name, sched.Name)
+			}
 		}
 		kept := c.Workflows[:0]
 		for _, def := range c.Workflows {

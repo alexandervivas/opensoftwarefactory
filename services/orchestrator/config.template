@@ -433,3 +433,14 @@ workflows:
         position:
           x: 796
           y: 30
+
+# A schedule starts a workflow on a cron expression (5 fields, read in `timezone`, UTC by
+# default) with the stored artifact `input` as the run input. `workflow` is a name or name@vN.
+# `catchup_window` (default 24h, "0" for none) is how late a missed fire may still start.
+# The input artifact must exist before the schedule is unpaused.
+schedules:
+  - name: weekly-architecture-review
+    workflow: ex05-architecture-review@v1
+    input: tasks/weekly-architecture-review.md
+    cron: "0 9 * * 1"
+    paused: true
