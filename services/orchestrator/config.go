@@ -16,6 +16,7 @@ import (
 // Config is the content of config.yaml: every stored version of every workflow.
 type Config struct {
 	Workflows []pipeline.Definition `yaml:"workflows" json:"workflows"`
+	Schedules []Schedule            `yaml:"schedules,omitempty" json:"schedules,omitempty"`
 }
 
 // parseConfig reads the configuration. A workflow without a version is v1, and a workflow
@@ -88,7 +89,10 @@ func (c Config) validate() error {
 		}
 		seen[ref] = true
 	}
-	return pipeline.ValidateSet(c.Workflows)
+	if err := pipeline.ValidateSet(c.Workflows); err != nil {
+		return err
+	}
+	return c.validateSchedules()
 }
 
 // find returns the newest version of the named workflow, or the given version when it is
