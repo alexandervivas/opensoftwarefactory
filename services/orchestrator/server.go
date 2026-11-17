@@ -55,6 +55,7 @@ type RunRecord struct {
 	StartedBy          string    `json:"started_by"`
 	InputArtifact      string    `json:"input_artifact"`
 	Source             string    `json:"source,omitempty"`
+	Schedule           string    `json:"schedule,omitempty"`
 }
 
 // PendingDecision is a gate step of a running workflow that waits for a person.
@@ -197,8 +198,37 @@ func (s *server) startRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	traceID := uuid.NewString()
-	span := trace.SpanFromContext(r.Context())
+	startedBy := strings.TrimSpace(r.Header.Get("X-Creator"))
+	if startedBy == "" {
+		startedBy = "orchestrator"
+	}
+	started, err := s.startRunFor(r.Context(), c, def, body, startOptions{StartedBy: startedBy, Source: r.URL.Query().Get("input")})
+	if err != nil {
+		s.fail(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"trace_id": started.TraceID, "workflow": def.Name, "workflow_version": def.Version, "input_artifact": started.InputArtifact})
+}
+
+// startOptions says who starts a run and where its input came from. An empty TraceID
+// assigns a new one; a scheduler passes a fixed one so a retried start finds its run.
+type startOptions struct{ StartedBy, Source, Schedule, TraceID string }
+
+// startedRun is what a started run is known by.
+type startedRun struct {
+	TraceID, InputArtifact string
+	Definition             pipeline.Definition
+}
+
+// startRunFor stores the body as the run input, writes the run record and metadata, and
+// starts the workflow. Manual and scheduled runs share it, so both record the same things.
+// Every error is a blobstore or runner failure.
+func (s *server) startRunFor(ctx context.Context, c Config, def pipeline.Definition, body []byte, opts startOptions) (startedRun, error) {
+	traceID := opts.TraceID
+	if traceID == "" {
+		traceID = uuid.NewString()
+	}
+	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.String("factory.run_id", traceID), attribute.String("factory.workflow", def.Name))
 	distributedTraceID := ""
 	if sc := span.SpanContext(); sc.IsValid() {
@@ -206,37 +236,30 @@ func (s *server) startRun(w http.ResponseWriter, r *http.Request) {
 	}
 	prefix := pipeline.RunPrefix(traceID)
 	input := pipeline.ArtifactID(prefix, pipeline.InputSource)
-	startedBy := strings.TrimSpace(r.Header.Get("X-Creator"))
-	if startedBy == "" {
-		startedBy = "orchestrator"
-	}
-	if err = s.blobs.Put(r.Context(), input, body, pipeline.Meta{Creator: startedBy, TraceID: traceID}); err != nil {
-		s.fail(w, http.StatusBadGateway, err)
-		return
+	startedBy := opts.StartedBy
+	if err := s.blobs.Put(ctx, input, body, pipeline.Meta{Creator: startedBy, TraceID: traceID}); err != nil {
+		return startedRun{}, err
 	}
 	// The run record lets the UI name runs by workflow and time instead of trace ID.
 	run := RunRecord{
 		TraceID: traceID, Workflow: def.Name, WorkflowVersion: def.Version, Started: time.Now().UTC(), StartedBy: startedBy,
-		InputArtifact: input, Source: r.URL.Query().Get("input"), DistributedTraceID: distributedTraceID,
+		InputArtifact: input, Source: opts.Source, Schedule: opts.Schedule, DistributedTraceID: distributedTraceID,
 	}
 	record, _ := json.MarshalIndent(run, "", "  ")
-	if err = s.blobs.Put(r.Context(), pipeline.ArtifactID(prefix, "run.json"), record, pipeline.Meta{Creator: startedBy, TraceID: traceID}); err != nil {
-		s.fail(w, http.StatusBadGateway, err)
-		return
+	if err := s.blobs.Put(ctx, pipeline.ArtifactID(prefix, "run.json"), record, pipeline.Meta{Creator: startedBy, TraceID: traceID}); err != nil {
+		return startedRun{}, err
 	}
 	// The metadata records what produces the run, so the run can be evaluated later.
-	metadata, _ := json.MarshalIndent(s.runMetadata(r.Context(), c, def, run), "", "  ")
-	if err = s.blobs.Put(r.Context(), pipeline.ArtifactID(prefix, pipeline.MetadataFile), metadata, pipeline.Meta{Creator: startedBy, TraceID: traceID}); err != nil {
-		s.fail(w, http.StatusBadGateway, err)
-		return
+	metadata, _ := json.MarshalIndent(s.runMetadata(ctx, c, def, run), "", "  ")
+	if err := s.blobs.Put(ctx, pipeline.ArtifactID(prefix, pipeline.MetadataFile), metadata, pipeline.Meta{Creator: startedBy, TraceID: traceID}); err != nil {
+		return startedRun{}, err
 	}
 	runInputs := []pipeline.Item{{Source: pipeline.InputSource, Artifact: input, Round: 1}}
-	if err = s.runner.Start(r.Context(), pipeline.Input{TraceID: traceID, Definition: def, Inputs: runInputs, Prefix: prefix}); err != nil {
-		s.fail(w, http.StatusBadGateway, err)
-		return
+	if err := s.runner.Start(ctx, pipeline.Input{TraceID: traceID, Definition: def, Inputs: runInputs, Prefix: prefix}); err != nil {
+		return startedRun{}, err
 	}
 	s.logger.Info("run started", "workflow", def.Name, "version", def.Version, "trace_id", traceID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"trace_id": traceID, "workflow": def.Name, "workflow_version": def.Version, "input_artifact": input})
+	return startedRun{TraceID: traceID, InputArtifact: input, Definition: def}, nil
 }
 
 func (s *server) getRun(w http.ResponseWriter, r *http.Request) {

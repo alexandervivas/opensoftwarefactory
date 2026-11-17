@@ -591,3 +591,56 @@ func TestDeleteRunRemovesHistoryAndArtifacts(t *testing.T) {
 		}
 	}
 }
+
+func startForTest(t *testing.T, opts startOptions, body string) (*fakeRunner, *memStore, startedRun) {
+	t.Helper()
+	c, err := parseConfig([]byte(sampleConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner, store := &fakeRunner{}, newMemStore()
+	s := &server{blobs: store, runner: runner, logger: slog.New(slog.DiscardHandler)}
+	def, ok := c.find("sample", 0)
+	if !ok {
+		t.Fatal("sample workflow missing")
+	}
+	started, err := s.startRunFor(context.Background(), c, def, []byte(body), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return runner, store, started
+}
+
+func TestStartRunForScheduleMarker(t *testing.T) {
+	trace := "0b1f7a52-6c1e-4f4e-9d0a-2a7a1f3c9e11"
+	runner, store, started := startForTest(t, startOptions{
+		StartedBy: "schedule/weekly", Schedule: "weekly", Source: "tasks/a.md", TraceID: trace,
+	}, "task body")
+	if started.TraceID != trace || len(runner.started) != 1 || runner.started[0].TraceID != trace {
+		t.Fatalf("started %+v %+v", started, runner.started)
+	}
+	if got := string(store.data["runs/"+trace+"/input"]); got != "task body" {
+		t.Fatalf("input %q", got)
+	}
+	for _, file := range []string{"run.json", "metadata.json"} {
+		data := string(store.data["runs/"+trace+"/"+file])
+		for _, want := range []string{`"schedule": "weekly"`, `"started_by": "schedule/weekly"`} {
+			if !strings.Contains(data, want) {
+				t.Errorf("%s lacks %s:\n%s", file, want, data)
+			}
+		}
+	}
+}
+
+func TestStartRunManualUnchanged(t *testing.T) {
+	srv, runner, store, _ := newTestServer(t)
+	if code, body := call(t, http.MethodPost, srv.URL+"/api/workflows/sample/runs", "hi"); code != http.StatusAccepted {
+		t.Fatalf("%d %s", code, body)
+	}
+	trace := runner.started[0].TraceID
+	for _, file := range []string{"run.json", "metadata.json"} {
+		if data := string(store.data["runs/"+trace+"/"+file]); strings.Contains(data, `"schedule"`) {
+			t.Errorf("%s has a schedule key:\n%s", file, data)
+		}
+	}
+}
