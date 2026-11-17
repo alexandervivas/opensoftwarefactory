@@ -15,9 +15,11 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the image is FROM scratch; schedule time zones need the database
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
@@ -69,7 +71,10 @@ func run() error {
 	w := worker.New(c, pipeline.TaskQueue, worker.Options{})
 	w.RegisterWorkflowWithOptions(pipeline.Pipeline, workflow.RegisterOptions{Name: pipeline.WorkflowName})
 	w.RegisterWorkflowWithOptions(pipeline.Team, workflow.RegisterOptions{Name: pipeline.TeamWorkflowName})
+	w.RegisterWorkflowWithOptions(ScheduledRun, workflow.RegisterOptions{Name: scheduleWorkflowName})
 	agents := newAgentRegistry(blobs.Client)
+	s := &server{configPath: *configPath, blobs: blobs, runner: temporalRunner{c}, agents: agents.settings, logger: logger}
+	w.RegisterActivity(&scheduleActivities{s: s})
 	w.RegisterActivity(&pipeline.Activities{Store: blobs, LoadDefinitions: func() ([]pipeline.Definition, error) {
 		cfg, err := loadConfig(*configPath)
 		return cfg.Workflows, err
@@ -79,7 +84,6 @@ func run() error {
 	}
 	defer w.Stop()
 
-	s := &server{configPath: *configPath, blobs: blobs, runner: temporalRunner{c}, agents: agents.settings, logger: logger}
 	httpServer := &http.Server{Addr: *addr, Handler: otelhttp.NewHandler(s.routes(), "orchestrator.http"), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -104,13 +108,20 @@ func run() error {
 type temporalRunner struct{ c client.Client }
 
 // Start uses the trace ID as the Temporal workflow ID, so each run is
-// addressable by its trace ID in the API and the Temporal UI.
+// addressable by its trace ID in the API and the Temporal UI. A trace ID that already has
+// a run, running or ended, is refused with errAlreadyStarted instead of starting another.
 func (r temporalRunner) Start(ctx context.Context, in pipeline.Input) error {
 	_, err := r.c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID:        in.TraceID,
-		TaskQueue: pipeline.TaskQueue,
-		Memo:      map[string]any{"workflow": in.Definition.Name, "trace_id": in.TraceID},
+		ID:                                       in.TraceID,
+		TaskQueue:                                pipeline.TaskQueue,
+		Memo:                                     map[string]any{"workflow": in.Definition.Name, "trace_id": in.TraceID},
+		WorkflowIDReusePolicy:                    enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+		WorkflowExecutionErrorWhenAlreadyStarted: true,
 	}, pipeline.WorkflowName, in)
+	var started *serviceerror.WorkflowExecutionAlreadyStarted
+	if errors.As(err, &started) {
+		return errAlreadyStarted
+	}
 	return err
 }
 

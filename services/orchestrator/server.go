@@ -255,7 +255,13 @@ func (s *server) startRunFor(ctx context.Context, c Config, def pipeline.Definit
 		return startedRun{}, err
 	}
 	runInputs := []pipeline.Item{{Source: pipeline.InputSource, Artifact: input, Round: 1}}
-	if err := s.runner.Start(ctx, pipeline.Input{TraceID: traceID, Definition: def, Inputs: runInputs, Prefix: prefix}); err != nil {
+	err := s.runner.Start(ctx, pipeline.Input{TraceID: traceID, Definition: def, Inputs: runInputs, Prefix: prefix})
+	// A retried scheduled start finds the run its earlier attempt started.
+	if errors.Is(err, errAlreadyStarted) && opts.TraceID != "" {
+		s.logger.Info("run already started", "workflow", def.Name, "trace_id", traceID)
+		return startedRun{TraceID: traceID, InputArtifact: input, Definition: def}, nil
+	}
+	if err != nil {
 		return startedRun{}, err
 	}
 	s.logger.Info("run started", "workflow", def.Name, "version", def.Version, "trace_id", traceID)
