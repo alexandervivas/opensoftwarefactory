@@ -49,6 +49,7 @@ type RunMetadata struct {
 	Started            string            `json:"started"`
 	StartedBy          string            `json:"started_by"`
 	InputArtifact      string            `json:"input_artifact"`
+	Schedule           string            `json:"schedule,omitempty"`
 	// Agents maps an agent reference to its AgentSettings, or to an agentError.
 	Agents map[string]any `json:"agents"`
 	// DevPod is the run's dev pod. The pipeline adds it when a devpod step created the pod.
@@ -63,7 +64,7 @@ func (s *server) runMetadata(ctx context.Context, c Config, def pipeline.Definit
 		SchemaVersion: metadataSchemaVersion, RunID: record.TraceID, DistributedTraceID: record.DistributedTraceID,
 		Workflow:  WorkflowVersion{Name: def.Name, Version: pipeline.DefinitionVersion(def)},
 		Workflows: []WorkflowVersion{}, Started: record.Started.Format(time.RFC3339), StartedBy: record.StartedBy,
-		InputArtifact: record.InputArtifact, Agents: map[string]any{},
+		InputArtifact: record.InputArtifact, Schedule: record.Schedule, Agents: map[string]any{},
 	}
 	// A registry that does not answer must not hold up the start of the run for long.
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
