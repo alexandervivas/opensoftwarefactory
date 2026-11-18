@@ -7,6 +7,7 @@ import (
 
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 
 	"opensoftwarefactory/orchestrator/pipeline"
 )
@@ -55,5 +56,67 @@ func TestSchedulerSpecMapping(t *testing.T) {
 	d, _ := desired(weekly)
 	if o, err := scheduleOptions(d); err != nil || o.Spec.TimeZoneName != "UTC" {
 		t.Fatalf("default time zone = %q, %v", o.Spec.TimeZoneName, err)
+	}
+}
+
+// fakeTemporal stands in for the parts of the Temporal client that List uses; any other
+// method panics through the nil embedded interface.
+type fakeTemporal struct {
+	client.Client
+	sc *fakeScheduleClient
+}
+
+func (f fakeTemporal) ScheduleClient() client.ScheduleClient { return f.sc }
+
+type fakeScheduleClient struct {
+	client.ScheduleClient
+	ids   []string
+	descs map[string]*client.ScheduleDescription
+}
+
+func (f *fakeScheduleClient) List(context.Context, client.ScheduleListOptions) (client.ScheduleListIterator, error) {
+	return &fakeIterator{ids: f.ids}, nil
+}
+func (f *fakeScheduleClient) GetHandle(_ context.Context, id string) client.ScheduleHandle {
+	return fakeHandle{desc: f.descs[id]}
+}
+
+type fakeIterator struct{ ids []string }
+
+func (it *fakeIterator) HasNext() bool { return len(it.ids) > 0 }
+func (it *fakeIterator) Next() (*client.ScheduleListEntry, error) {
+	id := it.ids[0]
+	it.ids = it.ids[1:]
+	return &client.ScheduleListEntry{ID: id}, nil
+}
+
+type fakeHandle struct {
+	client.ScheduleHandle
+	desc *client.ScheduleDescription
+}
+
+func (h fakeHandle) Describe(context.Context) (*client.ScheduleDescription, error) {
+	return h.desc, nil
+}
+
+func TestSchedulerTemporalListOnlyFactory(t *testing.T) {
+	hash, err := converter.GetDefaultDataConverter().ToPayload("abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := &client.ScheduleDescription{Schedule: client.Schedule{Action: &client.ScheduleWorkflowAction{}}}
+	sc := &fakeScheduleClient{ids: []string{"nightly-backup", "factory/x"}, descs: map[string]*client.ScheduleDescription{
+		"nightly-backup": other,
+		"factory/x": {Schedule: client.Schedule{
+			Action: &client.ScheduleWorkflowAction{Memo: map[string]any{scheduleHashMemo: hash}},
+			State:  &client.ScheduleState{Paused: true},
+		}},
+	}}
+	got, err := temporalSchedules{fakeTemporal{sc: sc}}.List(context.Background(), schedulePrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "factory/x" || got[0].Hash != "abc123" || !got[0].Paused {
+		t.Fatalf("List = %+v", got)
 	}
 }
