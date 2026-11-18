@@ -92,3 +92,103 @@ func (s *server) fireView(r *http.Request, name string, at time.Time) *fireView 
 	}
 	return v
 }
+
+func (s *server) postSchedule(w http.ResponseWriter, r *http.Request) {
+	var sch Schedule
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&sch); err != nil {
+		s.fail(w, http.StatusBadRequest, err)
+		return
+	}
+	err := s.change(func(c *Config) error {
+		if _, ok := c.findSchedule(sch.Name); ok {
+			return refuse(http.StatusConflict, "schedule %q already exists", sch.Name)
+		}
+		c.Schedules = append(c.Schedules, sch)
+		return nil
+	})
+	if err != nil {
+		s.failChange(w, err)
+		return
+	}
+	s.scheduler.kick()
+	writeJSON(w, http.StatusCreated, scheduleFields(sch))
+}
+
+func (s *server) deleteSchedule(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	err := s.change(func(c *Config) error {
+		for i, sch := range c.Schedules {
+			if sch.Name == name {
+				c.Schedules = append(c.Schedules[:i:i], c.Schedules[i+1:]...)
+				return nil
+			}
+		}
+		return refuse(http.StatusNotFound, "unknown schedule")
+	})
+	if err != nil {
+		s.failChange(w, err)
+		return
+	}
+	s.scheduler.kick()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// pauseSchedule sets the paused flag in the config; the reconciler then pauses Temporal.
+func (s *server) pauseSchedule(paused bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		var stored Schedule
+		err := s.change(func(c *Config) error {
+			for i := range c.Schedules {
+				if c.Schedules[i].Name == name {
+					c.Schedules[i].Paused = paused
+					stored = c.Schedules[i]
+					return nil
+				}
+			}
+			return refuse(http.StatusNotFound, "unknown schedule")
+		})
+		if err != nil {
+			s.failChange(w, err)
+			return
+		}
+		s.scheduler.kick()
+		writeJSON(w, http.StatusOK, scheduleFields(stored))
+	}
+}
+
+// triggerSchedule fires a schedule now. A paused schedule may be triggered; one Temporal
+// does not have yet may not. A failing Temporal List or Trigger is an upstream failure, so
+// it answers 502, while an unknown name is 404 and a pending schedule 409.
+func (s *server) triggerSchedule(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	c, err := s.config()
+	if err != nil {
+		s.fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	if _, ok := c.findSchedule(name); !ok {
+		s.failChange(w, refuse(http.StatusNotFound, "unknown schedule"))
+		return
+	}
+	have, err := s.scheduler.api.List(r.Context(), schedulePrefix)
+	if err != nil {
+		s.fail(w, http.StatusBadGateway, err)
+		return
+	}
+	active := false
+	for _, st := range have {
+		active = active || st.ID == schedulePrefix+name
+	}
+	if !active {
+		s.failChange(w, refuse(http.StatusConflict, "schedule is not active yet"))
+		return
+	}
+	if err := s.scheduler.api.Trigger(r.Context(), schedulePrefix+name); err != nil {
+		s.fail(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"name": name})
+}

@@ -98,8 +98,121 @@ func TestListSchedulesSurvivesFailingList(t *testing.T) {
 
 func TestSchedulesWithoutSchedulerAre503(t *testing.T) {
 	url, _, _, _ := newScheduleServer(t, nil)
-	code, body := call(t, http.MethodGet, url+"/api/schedules", "")
-	if code != http.StatusServiceUnavailable || !strings.Contains(body, "scheduling is not configured") {
-		t.Errorf("GET = %d %s", code, body)
+	for _, r := range [][2]string{
+		{"GET", "/api/schedules"}, {"POST", "/api/schedules"}, {"DELETE", "/api/schedules/weekly"},
+		{"POST", "/api/schedules/weekly/pause"}, {"POST", "/api/schedules/weekly/unpause"}, {"POST", "/api/schedules/weekly/trigger"},
+	} {
+		code, body := call(t, r[0], url+r[1], newSchedule)
+		if code != http.StatusServiceUnavailable || !strings.Contains(body, "scheduling is not configured") {
+			t.Errorf("%v = %d %s", r, code, body)
+		}
+	}
+}
+
+func TestCreateSchedule(t *testing.T) {
+	url, _, path, sc := newScheduleServer(t, &fakeSchedules{})
+	code, body := call(t, http.MethodPost, url+"/api/schedules", newSchedule)
+	if code != http.StatusCreated || !strings.Contains(body, `"name":"daily"`) {
+		t.Fatalf("create = %d %s", code, body)
+	}
+	if c, _ := loadConfig(path); len(c.Schedules) != 2 || c.Schedules[1].Name != "daily" {
+		t.Fatalf("schedules = %v", c.Schedules)
+	}
+	select {
+	case <-sc.channel():
+	default:
+		t.Fatal("create did not kick the scheduler")
+	}
+}
+
+func TestCreateScheduleRefusals(t *testing.T) {
+	url, _, path, sc := newScheduleServer(t, &fakeSchedules{})
+	for _, tc := range []struct {
+		body, want string
+		code       int
+	}{
+		{`{"name":"bad","workflow":"sample","input":"x","cron":"* * * *"}`, "cron", 422},
+		{`{"name":"bad","workflow":"sample","input":"x","cron":"* * * * *","timezone":"Mars/Base"}`, "timezone", 422},
+		{`{"name":"weekly","workflow":"sample","input":"x","cron":"* * * * *"}`, "already exists", 409},
+		{`{"name":"x","bogus":1}`, "bogus", 400},
+	} {
+		code, body := call(t, http.MethodPost, url+"/api/schedules", tc.body)
+		if code != tc.code || !strings.Contains(body, tc.want) {
+			t.Errorf("%s = %d %s", tc.body, code, body)
+		}
+	}
+	if c, _ := loadConfig(path); len(c.Schedules) != 1 {
+		t.Fatalf("schedules = %v", c.Schedules)
+	}
+	select {
+	case <-sc.channel():
+		t.Fatal("a refused create kicked the scheduler")
+	default:
+	}
+}
+
+func TestDeletePauseUnpauseSchedule(t *testing.T) {
+	url, _, path, sc := newScheduleServer(t, &fakeSchedules{})
+	kicked := func() bool {
+		select {
+		case <-sc.channel():
+			return true
+		default:
+			return false
+		}
+	}
+	code, body := call(t, http.MethodPost, url+"/api/schedules/weekly/pause", "")
+	if c, _ := loadConfig(path); code != http.StatusOK || !strings.Contains(body, `"paused":true`) || !c.Schedules[0].Paused || !kicked() {
+		t.Fatalf("pause = %d %s", code, body)
+	}
+	code, body = call(t, http.MethodPost, url+"/api/schedules/weekly/unpause", "")
+	if c, _ := loadConfig(path); code != http.StatusOK || !strings.Contains(body, `"paused":false`) || c.Schedules[0].Paused || !kicked() {
+		t.Fatalf("unpause = %d %s", code, body)
+	}
+	code, _ = call(t, http.MethodDelete, url+"/api/schedules/weekly", "")
+	if c, _ := loadConfig(path); code != http.StatusNoContent || len(c.Schedules) != 0 || !kicked() {
+		t.Fatalf("delete = %d", code)
+	}
+}
+
+func TestUnknownScheduleIs404(t *testing.T) {
+	url, _, _, sc := newScheduleServer(t, &fakeSchedules{})
+	for _, r := range [][2]string{
+		{"DELETE", "/api/schedules/nope"}, {"POST", "/api/schedules/nope/pause"},
+		{"POST", "/api/schedules/nope/unpause"}, {"POST", "/api/schedules/nope/trigger"},
+	} {
+		if code, body := call(t, r[0], url+r[1], ""); code != http.StatusNotFound {
+			t.Errorf("%v = %d %s", r, code, body)
+		}
+	}
+	select {
+	case <-sc.channel():
+		t.Fatal("a refused change kicked the scheduler")
+	default:
+	}
+}
+
+func TestTriggerUpstreamFailureIs502(t *testing.T) {
+	api := &fakeSchedules{listErr: errors.New("temporal down")}
+	url, _, _, _ := newScheduleServer(t, api)
+	if code, body := call(t, http.MethodPost, url+"/api/schedules/weekly/trigger", ""); code != http.StatusBadGateway {
+		t.Fatalf("trigger = %d %s", code, body)
+	}
+}
+
+func TestTriggerSchedule(t *testing.T) {
+	api := &fakeSchedules{}
+	url, _, path, _ := newScheduleServer(t, api)
+	code, body := call(t, http.MethodPost, url+"/api/schedules/weekly/trigger", "")
+	if code != http.StatusConflict || !strings.Contains(body, "schedule is not active yet") || len(api.calls) != 0 {
+		t.Fatalf("pending trigger = %d %s %v", code, body, api.calls)
+	}
+	api.have = []scheduleState{{ID: "factory/weekly", Paused: true}}
+	code, body = call(t, http.MethodPost, url+"/api/schedules/weekly/trigger", "")
+	if code != http.StatusAccepted || !strings.Contains(body, `"name":"weekly"`) || len(api.calls) != 1 || api.calls[0] != "trigger factory/weekly" {
+		t.Fatalf("trigger = %d %s %v", code, body, api.calls)
+	}
+	if c, _ := loadConfig(path); c.Schedules[0].Paused {
+		t.Fatal("trigger changed the config")
 	}
 }
