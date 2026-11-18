@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -45,6 +46,24 @@ type scheduleState struct {
 type scheduler struct {
 	api    scheduleAPI
 	logger *slog.Logger
+
+	once  sync.Once
+	kicks chan struct{}
+}
+
+// channel is the one-slot queue of pending kicks.
+func (sc *scheduler) channel() chan struct{} {
+	sc.once.Do(func() { sc.kicks = make(chan struct{}, 1) })
+	return sc.kicks
+}
+
+// kick asks run to reconcile now. It never blocks; a kick while one is pending is dropped,
+// because the pending one reconciles the newest config anyway.
+func (sc *scheduler) kick() {
+	select {
+	case sc.channel() <- struct{}{}:
+	default:
+	}
 }
 
 // desired hashes the config entry without its paused flag, so a pause or an unpause made
@@ -103,7 +122,7 @@ func (sc *scheduler) reconcile(ctx context.Context, c Config) error {
 	return errors.Join(errs...)
 }
 
-// run reconciles now and then on every tick until ctx ends. A config that does not load
+// run reconciles now, on every tick, and when kicked, until ctx ends. A config that does not load
 // is skipped, so it never deletes schedules; every error is logged and retried next tick.
 func (sc *scheduler) run(ctx context.Context, load func() (Config, error), every time.Duration) {
 	tick := time.NewTicker(every)
@@ -122,6 +141,7 @@ func (sc *scheduler) run(ctx context.Context, load func() (Config, error), every
 		case <-ctx.Done():
 			return
 		case <-tick.C:
+		case <-sc.channel():
 		}
 	}
 }
