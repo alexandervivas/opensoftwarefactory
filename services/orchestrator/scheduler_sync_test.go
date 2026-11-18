@@ -169,3 +169,31 @@ func waitFor(t *testing.T, cond func() bool, f *fakeSchedules) {
 		}
 	}
 }
+
+func TestKickReconcilesWithoutWaitingForTheTick(t *testing.T) {
+	f := &fakeSchedules{}
+	sc := &scheduler{api: f, logger: slog.New(slog.DiscardHandler)}
+	var mu sync.Mutex
+	cfg := Config{}
+	load := func() (Config, error) { mu.Lock(); defer mu.Unlock(); return cfg, nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { sc.run(ctx, load, time.Hour); close(done) }()
+	waitFor(t, func() bool { return f.lists >= 1 }, f)
+	mu.Lock()
+	cfg = Config{Schedules: []Schedule{weekly}}
+	mu.Unlock()
+	finished := make(chan struct{})
+	go func() { sc.kick(); sc.kick(); sc.kick(); close(finished) }()
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("kick blocked")
+	}
+	waitFor(t, func() bool { return len(f.calls) > 0 }, f)
+	cancel()
+	<-done
+	if f.calls[0] != "create factory/weekly" {
+		t.Fatalf("calls = %v", f.calls)
+	}
+}
